@@ -1,0 +1,1 @@
+{"lat":0.0,"lon":0.0,"brightness":255,"utc_offset":3600,"ntp_pool_server":"0.hu.pool.ntp.org","mqtt_server":"","mqtt_username":"","mqtt_password":"","night_time_enabled":true,"night_time_auto_on":true,"night_time_on_at":72000,"night_time_off_at":14400,"night_brightness":20,"pihole_uri":"","pihole_port":80,"pihole_api_token":"","weather_city_id":0,"weather_api_key":""}
