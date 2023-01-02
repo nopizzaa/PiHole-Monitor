@@ -1,6 +1,6 @@
 #include "Settings.h"
 
-DFRobot_SHT20 sht20;
+// DFRobot_SHT20 sht20;
 
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP);
@@ -18,6 +18,8 @@ SSD1306Wire display(I2C_DISPLAY_ADDRESS, SDA_PIN, SCL_PIN);
 OLEDDisplayUi ui(&display);
 
 Sun sunsetSunrise;
+
+Thermistor *thermistor = NULL;
 
 void drawScreen1(OLEDDisplay *display, OLEDDisplayUiState *state, int16_t x, int16_t y);
 void drawScreen2(OLEDDisplay *display, OLEDDisplayUiState *state, int16_t x, int16_t y);
@@ -352,7 +354,7 @@ void drawScreen4(OLEDDisplay *display, OLEDDisplayUiState *state, int16_t x, int
     display->setFont(ArialMT_Plain_16);
     display->drawString(64 + x, 7 + y, "Indoor");
     display->setFont(ArialMT_Plain_24);
-    display->drawString(64 + x, 21 + y, String(humidity, 0) + "%" + " " + String(round(temperature), 0) + "°C");
+    display->drawString(64 + x, 21 + y, String(temperature, 1) + "°C");
 }
 
 void drawScreen5(OLEDDisplay *display, OLEDDisplayUiState *state, int16_t x, int16_t y)
@@ -462,11 +464,13 @@ void drawOWHoffline(OLEDDisplay *display, OLEDDisplayUiState *state, int16_t x, 
 
 #pragma endregion
 
+/*
 void updateSht20State()
 {
     humidity = sht20.readHumidity();
     temperature = sht20.readTemperature();
 }
+*/
 
 void publishStateViaMqtt()
 {
@@ -474,8 +478,8 @@ void publishStateViaMqtt()
     DynamicJsonDocument stateJson(894);
     char payload[256];
 
-    stateJson["sht20_humidity"] = humidity;
-    stateJson["sht20_temperature"] = temperature;
+    // stateJson["sht20_humidity"] = humidity;
+    stateJson["temperature"] = temperature;
 
     wifiJson["ssid"] = WiFi.SSID();
     wifiJson["ip"] = WiFi.localIP().toString();
@@ -519,6 +523,7 @@ void publishAutoConfig()
 
     autoconfPayload.clear();
 
+    /*
     autoconfPayload["device"] = device.as<JsonObject>();
     autoconfPayload["availability_topic"] = MQTT_TOPIC_AVAILABILITY;
     autoconfPayload["state_topic"] = MQTT_TOPIC_STATE;
@@ -532,18 +537,19 @@ void publishAutoConfig()
     mqttClient.publish(&MQTT_TOPIC_AUTOCONF_SHT20_HUMIDITY_SENSOR[0], &mqttPayload[0], true);
 
     autoconfPayload.clear();
+    */
 
     autoconfPayload["device"] = device.as<JsonObject>();
     autoconfPayload["availability_topic"] = MQTT_TOPIC_AVAILABILITY;
     autoconfPayload["state_topic"] = MQTT_TOPIC_STATE;
     autoconfPayload["name"] = identifier + String(" Temperature");
     autoconfPayload["unit_of_measurement"] = "˚C";
-    autoconfPayload["value_template"] = "{{(value_json.sht20_temperature)|round(1)}}";
-    autoconfPayload["unique_id"] = identifier + String("_sht20_temperature");
+    autoconfPayload["value_template"] = "{{(value_json.temperature)|round(1)}}";
+    autoconfPayload["unique_id"] = identifier + String("_thermistor_temperature");
     autoconfPayload["icon"] = "mdi:thermometer";
 
     serializeJson(autoconfPayload, mqttPayload);
-    mqttClient.publish(&MQTT_TOPIC_AUTOCONF_SHT20_TEMPERATURE_SENSOR[0], &mqttPayload[0], true);
+    mqttClient.publish(&MQTT_TOPIC_AUTOCONF_TEMPERATURE_SENSOR[0], &mqttPayload[0], true);
 
     autoconfPayload.clear();
 }
@@ -590,16 +596,14 @@ void initSettings()
 
 void setupOTA()
 {
-    ArduinoOTA.onStart([]() {
-        Serial.println("Start");
-    });
-    ArduinoOTA.onEnd([]() {
-        Serial.println("\nEnd");
-    });
-    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-        Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
-    });
-    ArduinoOTA.onError([](ota_error_t error) {
+    ArduinoOTA.onStart([]()
+                       { Serial.println("Start"); });
+    ArduinoOTA.onEnd([]()
+                     { Serial.println("\nEnd"); });
+    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total)
+                          { Serial.printf("Progress: %u%%\r", (progress / (total / 100))); });
+    ArduinoOTA.onError([](ota_error_t error)
+                       {
         Serial.printf("Error[%u]: ", error);
 
         if (error == OTA_AUTH_ERROR) {
@@ -612,8 +616,7 @@ void setupOTA()
             Serial.println("Receive Failed");
         } else if (error == OTA_END_ERROR) {
             Serial.println("End Failed");
-        }
-    });
+        } });
 
     ArduinoOTA.setHostname(identifier);
 
@@ -632,8 +635,19 @@ void setup()
     Serial.printf("CPU Frequency: %u MHz\n", ESP.getCpuFreqMHz());
     Serial.printf("Reset reason: %s\n", ESP.getResetReason().c_str());
 
-    sht20.initSHT20();
-    sht20.checkSHT20();
+    // sht20.initSHT20();
+    // sht20.checkSHT20();
+
+    Thermistor *originThermistor = new NTC_Thermistor(
+        SENSOR_PIN,
+        REFERENCE_RESISTANCE,
+        NOMINAL_RESISTANCE,
+        NOMINAL_TEMPERATURE,
+        B_VALUE);
+    thermistor = new AverageThermistor(
+        originThermistor,
+        READINGS_NUMBER,
+        DELAY_TIME);
 
     if (!LittleFS.begin())
     {
@@ -648,12 +662,14 @@ void setup()
     snprintf(MQTT_TOPIC_AVAILABILITY, 127, "%s/%s/status", FIRMWARE_PREFIX, identifier);
     snprintf(MQTT_TOPIC_STATE, 127, "%s/%s/state", FIRMWARE_PREFIX, identifier);
     snprintf(MQTT_TOPIC_COMMAND, 127, "%s/%s/command", FIRMWARE_PREFIX, identifier);
-    snprintf(MQTT_TOPIC_AUTOCONF_SHT20_TEMPERATURE_SENSOR, 127, "homeassistant/sensor/%s/%s_sht20_temperature/config", FIRMWARE_PREFIX, identifier);
-    snprintf(MQTT_TOPIC_AUTOCONF_SHT20_HUMIDITY_SENSOR, 127, "homeassistant/sensor/%s/%s_sht20_humidity/config", FIRMWARE_PREFIX, identifier);
+    snprintf(MQTT_TOPIC_AUTOCONF_TEMPERATURE_SENSOR, 127, "homeassistant/sensor/%s/%s_thermistor_temperature/config", FIRMWARE_PREFIX, identifier);
+    // snprintf(MQTT_TOPIC_AUTOCONF_SHT20_HUMIDITY_SENSOR, 127, "homeassistant/sensor/%s/%s_sht20_humidity/config", FIRMWARE_PREFIX, identifier);
     snprintf(MQTT_TOPIC_AUTOCONF_WIFI_SENSOR, 127, "homeassistant/sensor/%s/%s_wifi/config", FIRMWARE_PREFIX, identifier);
 
     display.init();
-    display.flipScreenVertically();
+    display.invertDisplay();
+
+    // display.flipScreenVertically();
     display.setTextAlignment(TEXT_ALIGN_CENTER);
     display.setFont(ArialMT_Plain_16);
     display.drawString(64, 12, "Welcomme!");
@@ -682,13 +698,15 @@ void setup()
     ui.setFrames(frames, 8);
     ui.setOverlays(overlays, 1);
     ui.init();
-    display.flipScreenVertically();
+    // display.flipScreenVertically();
 
     button.begin();
     button.onPressed(uiNextFrame);
     button.onPressedFor(BTN_LONG_PRESSED, uiPauseStartAutoTransition);
 
-    updateSht20State();
+    // updateSht20State();
+
+    temperature = thermistor->readCelsius();
 
     mqttClient.setKeepAlive(10);
     mqttClient.setBufferSize(2048);
@@ -711,10 +729,10 @@ void setup()
     server.serveStatic("/style.css", LittleFS, "/style.css");
     server.serveStatic("/bootstrap.bundle.min.js", LittleFS, "/bootstrap.bundle.min.js");
 
-    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) { 
-        request->send(LittleFS, "/index.html", String());
-    });
-    server.on("/api/status", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
+              { request->send(LittleFS, "/index.html", String()); });
+    server.on("/api/status", HTTP_GET, [](AsyncWebServerRequest *request)
+              {
         AsyncResponseStream *response = request->beginResponseStream("application/json");
         const unsigned long currentEpochTime = timeClient.getEpochTime();
         DynamicJsonDocument json(2048);
@@ -723,8 +741,8 @@ void setup()
         json["wifi_quality"] = getWifiQuality();
         json["ip"] = WiFi.localIP().toString();
         json["hostname"] = WiFi.getHostname();
-        json["sht20_humidity"] = humidity;
-        json["sht20_temp"] = temperature;
+        // json["sht20_humidity"] = humidity;
+        json["temperature"] = temperature;
         json["mqtt_is_enabled"] = mqttServerEnabled;
         json["mqtt_is_conected"] = mqttClient.connected();
         json["coord_lat"] = Config::lat;
@@ -749,11 +767,9 @@ void setup()
         json["pihole_sum_error_msg"] = piholeClient.getSummaryErrorMsg();
         json["pihole_top_error_msg"] = piholeClient.getTopCLientErrorMsg();
         serializeJson(json, *response);
-        request->send(response); 
-    });
-    server.onNotFound([](AsyncWebServerRequest *request){
-        request->send(404, "text/plain", "Page not found");
-    });
+        request->send(response); });
+    server.onNotFound([](AsyncWebServerRequest *request)
+                      { request->send(404, "text/plain", "Page not found"); });
 
     server.begin();
 }
@@ -783,7 +799,8 @@ void loop()
     if (currentMillis - lastSensorMqttUpdate >= SENSOR_MQTT_UPDATE_INTERVAL)
     {
         lastSensorMqttUpdate = currentMillis;
-        updateSht20State();
+        temperature = thermistor->readCelsius();
+        delay(100);
         if (mqttServerEnabled)
             publishStateViaMqtt();
     }

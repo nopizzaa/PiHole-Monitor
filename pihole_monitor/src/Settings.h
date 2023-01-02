@@ -31,9 +31,12 @@ SOFTWARE.
 #include <LittleFS.h> 
 #include <FS.h>
 #include <ArduinoOTA.h>
+#include <Thermistor.h>
+#include <NTC_Thermistor.h>
+#include <AverageThermistor.h>
 
 #include "WeatherStationFonts.h"
-#include "DFRobot_SHT20.h"
+// #include "DFRobot_SHT20.h"
 #include "SSD1306Wire.h"
 #include "OLEDDisplayUi.h"
 #include "CustomIcons.h"
@@ -42,30 +45,38 @@ SOFTWARE.
 #include "PiHoleClient.h"
 #include "Config.h"
 
-#define SPIFFS LittleFS
-#define SCREEN_WIDHT 128
+#define SPIFFS          LittleFS
+#define SCREEN_WIDHT    128
 
-#define BTN_LONG_PRESSED 2000
-#define BUTTON_PIN 2
-#define I2C_DISPLAY_ADDRESS 0x3c
-#define SDA_PIN 4
-#define SCL_PIN 5
-#define WEBSERVER_PORT 80
-#define NOTIFICATION_LED_PIN LED_BUILTIN
-#define VERSION "a3.0"
-#define HOSTNAME "PIMON-%X"
-#define NTP_UPDATE_INTERVAL 7200000L
-#define WEATHER_UPDATE_INTERVAL 900000L
-#define SENSOR_MQTT_UPDATE_INTERVAL 30000L
-#define UPDATE_PIHOLESUM_MQTT_RECONET_INTERVAL 60000L
-#define UPDATE_PIHOLE_GRAPH_INTERVAL 600000L
-#define SERIAL_BAUD_RATE 115200
-#define TARGET_FPS 60
+#define BTN_LONG_PRESSED                        2000
+#define BUTTON_PIN                              2
+#define I2C_DISPLAY_ADDRESS                     0x3c
+#define SDA_PIN                                 4
+#define SCL_PIN                                 5
+#define WEBSERVER_PORT                          80
+#define NOTIFICATION_LED_PIN                    LED_BUILTIN
+#define VERSION                                 "a3.0"
+#define HOSTNAME                                "PIMON-%X"
+#define NTP_UPDATE_INTERVAL                     7200000L
+#define WEATHER_UPDATE_INTERVAL                 900000L
+#define SENSOR_MQTT_UPDATE_INTERVAL             30000L
+#define UPDATE_PIHOLESUM_MQTT_RECONET_INTERVAL  60000L
+#define UPDATE_PIHOLE_GRAPH_INTERVAL            600000L
+#define SERIAL_BAUD_RATE                        115200
+#define TARGET_FPS                              60
 
-#define FIRMWARE_PREFIX "esp8266-piholemonitor-temperature-sensor"
-#define AVAILABILITY_ONLINE "online"
-#define AVAILABILITY_OFFLINE "offline"
-#define MQTT_PORT 1883
+#define SENSOR_PIN             A0
+#define REFERENCE_RESISTANCE   10000
+#define NOMINAL_RESISTANCE     13000
+#define NOMINAL_TEMPERATURE    25
+#define B_VALUE                3380
+#define READINGS_NUMBER        25
+#define DELAY_TIME             4
+
+#define FIRMWARE_PREFIX         "esp8266-piholemonitor-temperature-sensor"
+#define AVAILABILITY_ONLINE     "online"
+#define AVAILABILITY_OFFLINE    "offline"
+#define MQTT_PORT               1883
 
 char identifier[24];
 char MQTT_TOPIC_AVAILABILITY[128];
@@ -73,8 +84,8 @@ char MQTT_TOPIC_STATE[128];
 char MQTT_TOPIC_COMMAND[128];
 
 char MQTT_TOPIC_AUTOCONF_WIFI_SENSOR[128];
-char MQTT_TOPIC_AUTOCONF_SHT20_TEMPERATURE_SENSOR[128];
-char MQTT_TOPIC_AUTOCONF_SHT20_HUMIDITY_SENSOR[128];
+char MQTT_TOPIC_AUTOCONF_TEMPERATURE_SENSOR[128];
+// char MQTT_TOPIC_AUTOCONF_SHT20_HUMIDITY_SENSOR[128];
 
 // Global variables
 boolean autoTransition = true;
@@ -89,5 +100,5 @@ unsigned long lastPiholeUpdateMqttReconet = 0;
 unsigned long lastPiholeGraphUpdate = 0;
 
 // Sensors
-float temperature = 0.0f;
-float humidity = 0.0f;
+double temperature = 0.0;
+// float humidity = 0.0f;
