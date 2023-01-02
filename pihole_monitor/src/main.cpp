@@ -352,9 +352,9 @@ void drawScreen4(OLEDDisplay *display, OLEDDisplayUiState *state, int16_t x, int
     ui.enableIndicator();
     display->setTextAlignment(TEXT_ALIGN_CENTER);
     display->setFont(ArialMT_Plain_16);
-    display->drawString(64 + x, 7 + y, "Indoor");
+    display->drawString(64 + x, 7 + y, "Temperature");
     display->setFont(ArialMT_Plain_24);
-    display->drawString(64 + x, 21 + y, String(temperature, 1) + "°C");
+    display->drawString(64 + x, 21 + y, String(round(temperature * 10) / 10, 1) + "°C");
 }
 
 void drawScreen5(OLEDDisplay *display, OLEDDisplayUiState *state, int16_t x, int16_t y)
